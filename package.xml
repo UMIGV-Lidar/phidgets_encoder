@@ -15,4 +15,6 @@
 	<depend>roscpp</depend>
 	<depend>phidgets_api</depend>
 	<depend>nav_msgs</depend>
+
+	<build_depend>libboost-dev</build_depend>
 </package>

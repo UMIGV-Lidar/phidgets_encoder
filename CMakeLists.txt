@@ -9,6 +9,8 @@ add_definitions(-std=c++14)
 
 project(phidgets_encoder)
 
+find_package(Boost REQUIRED)
+
 find_package(
 	catkin REQUIRED
 	COMPONENTS
@@ -17,9 +19,9 @@ find_package(
 		nav_msgs
 )
 
-catkin_package()
+catkin_package(DEPENDS Boost)
 
-include_directories(${catkin_INCLUDE_DIRS})
+include_directories(${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
 
 add_library(phidgets_encoder_node src/phidgets_encoder_node.cpp)
 target_link_libraries(phidgets_encoder_node ${catkin_LIBRARIES})
