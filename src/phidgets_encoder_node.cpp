@@ -1,6 +1,7 @@
 #include "ros/ros.h"
 #include "phidgets_api/encoder.h"
 #include "nav_msgs/Odometry.h"
+#include "tf/transform_datatypes.h"
 
 #include <boost/array.hpp>
 
@@ -11,6 +12,13 @@
 #include <stdexcept>
 #include <algorithm>
 
+struct PositionState {
+	tf::Point position;
+	tf::Quaternion orientation;
+	tf::Vector3 linear_velocity;
+	tf::Vector3 angular_velocity;
+};
+
 // channel 0 - front left
 // channel 1 - front right
 // channel 2 - back left
@@ -19,6 +27,7 @@ void timer_callback(
 	ros::NodeHandle &n,
 	ros::Publisher &pub,
 	phidgets::Encoder &encoder,
+	PositionState &state,
 	const ros::TimerEvent&
 ) {
 	static std::uint32_t sequence_id = 0;
@@ -100,8 +109,6 @@ int main(int argc, char *argv[]) {
 		private_node.setParam("frame_id", "phidgets_encoder");
 	}
 
-	auto pub = public_node.advertise<nav_msgs::Odometry>("odom", 1000);
-
 	phidgets::Encoder encoder;
 	encoder.open(serial_number);
 
@@ -109,6 +116,15 @@ int main(int argc, char *argv[]) {
 	for (int i = 0; i < encoder.getEncoderCount(); ++i) {
 		encoder.setEnabled(i, true);
 	}
+
+	auto pub = public_node.advertise<nav_msgs::Odometry>("odom", 1000);
+
+	PositionState state = {
+		{0.0, 0.0, 0.0}, // position
+		tf::createIdentityQuaternion(), // orientation
+		{0.0, 0.0, 0.0}, // linear_velocity
+		{0.0, 0.0, 0.0} // angular_velocity
+	};
 
 	using std::placeholders::_1;
 	auto timer = public_node.createTimer(
@@ -118,6 +134,7 @@ int main(int argc, char *argv[]) {
 			std::ref(private_node),
 			std::ref(pub),
 			std::ref(encoder),
+			std::ref(state),
 			_1
 		)
 	);
