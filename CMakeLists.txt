@@ -18,6 +18,7 @@ find_package(
 		phidgets_api
 		nav_msgs
 		tf
+		ros_cpp11_range
 )
 
 catkin_package(DEPENDS Boost)

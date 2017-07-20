@@ -18,4 +18,5 @@
 	<depend>tf</depend>
 
 	<build_depend>libboost-dev</build_depend>
+	<build_depend>ros_cpp11_range</build_depend>
 </package>
