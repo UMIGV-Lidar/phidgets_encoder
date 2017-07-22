@@ -7,7 +7,7 @@
 	<maintainer email="gregjm@umich.edu">Gregory Meyer</maintainer>
 	<license>BSD 3-Clause License</license>
 
-	<url type="repository">https://github.com/UMIGV-Lidar/phidgets_encoder</url>
+	<url type="repository">https://github.com/umigv/phidgets_encoder</url>
 	<author>Gregory Meyer</author>
 
 	<buildtool_depend>catkin</buildtool_depend>
