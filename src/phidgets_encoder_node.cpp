@@ -18,29 +18,111 @@
 #include <tuple>
 #include <utility>
 #include <sstream>
+#include <type_traits>
 
 static const constexpr std::size_t COVARIANCE_SIZE = 36;
 static const constexpr std::size_t ZERO = 0;
 static const constexpr std::size_t NUM_ENCODERS = 4;
 using covariance_type = boost::array<double, COVARIANCE_SIZE>;
 
+namespace traits {
+	template <typename T>
+	struct is_rosparam : public std::false_type { };
+
+	template <>
+	struct is_rosparam<bool> : public std::true_type { };
+
+	template <>
+	struct is_rosparam<int> : public std::true_type { };
+
+	template <>
+	struct is_rosparam<float> : public std::true_type { };
+
+	template <>
+	struct is_rosparam<double> : public std::true_type { };
+
+	template <>
+	struct is_rosparam<std::string> : public std::true_type { };
+
+	template <>
+	struct is_rosparam<std::vector<bool>> : public std::true_type { };
+
+	template <>
+	struct is_rosparam<std::vector<int>> : public std::true_type { };
+
+	template <>
+	struct is_rosparam<std::vector<float>> : public std::true_type { };
+
+	template <>
+	struct is_rosparam<std::vector<double>> : public std::true_type { };
+
+	template <>
+	struct is_rosparam<std::vector<std::string>> : public std::true_type { };
+
+	template <>
+	struct is_rosparam<std::map<std::string, bool>> :
+		public std::true_type
+	{ };
+
+	template <>
+	struct is_rosparam<std::map<std::string, int>> : public std::true_type { };
+
+	template <>
+	struct is_rosparam<std::map<std::string, float>> :
+		public std::true_type
+	{ };
+
+	template <>
+	struct is_rosparam<std::map<std::string, double>> :
+		public std::true_type
+	{ };
+
+	template <>
+	struct is_rosparam<std::map<std::string, std::string>> :
+		public std::true_type
+	{ };
+
+	template <typename T>
+	static const constexpr bool is_rosparam_v = is_rosparam<T>::value;
+}
+
 struct RobotState {
 	double x, y, theta;
 };
 
 template <typename T>
-T get_param_fatal(const ros::NodeHandle &node, const std::string &parameter) {
+std::enable_if_t<traits::is_rosparam_v<T>, T> get_parameter_fatal(
+	const ros::NodeHandle &node,
+	const std::string &parameter
+) {
 	T parameter_value;
 
 	if (!node.getParam(parameter, parameter_value)) {
 		std::ostringstream oss;
-		oss << "count not retreive parameter " << node.getNamespace() << parameter;
+		oss << "get_param_fatal: could not retreive parameter "
+			<< node.getNamespace() << parameter;
 
 		ROS_FATAL_STREAM(oss.str());
 		throw std::runtime_error(oss.str());
 	}
 
 	return parameter_value;
+}
+
+template <typename T>
+std::enable_if_t<traits::is_rosparam_v<T>, T> get_parameter_default(
+	const ros::NodeHandle &node,
+	const std::string &parameter,
+	const T &fallback = T { }
+) {
+	if (!node.hasParam(parameter)) {
+		node.setParam(parameter, fallback);
+		return fallback;
+	}
+
+	T to_return;
+	node.getParam(parameter, to_return);
+	return to_return;
 }
 
 geometry_msgs::Pose make_pose(const RobotState &state) {
@@ -60,7 +142,7 @@ geometry_msgs::Twist make_twist(
 	const RobotState &last,
 	const RobotState &current
 ) {
-	auto delta_t = get_param_fatal<double>(node, "polling_period");
+	auto delta_t = get_parameter_fatal<double>(node, "polling_period");
 
 	double delta_x = current.x - last.x;
 	double delta_y = current.y - last.y;
@@ -82,11 +164,9 @@ geometry_msgs::Twist make_twist(
 std::pair<int, double> initialize_parameters(const ros::NodeHandle &node) {
 	using DVec = std::vector<double>;
 
-	int serial_number;
-	double polling_period;
-
-	node.param("serial_number", serial_number, -1); // connect to any device
-	node.param("polling_period", polling_period, 0.004); // 4ms polling period
+	auto serial_number = get_parameter_default<int>(node, "serial_number", -1);
+	auto polling_period =
+		get_parameter_default<double>(node, "polling_period", 0.004);
 
 	if (!node.hasParam("pose_covariance")) {
 		node.setParam("pose_covariance", DVec(COVARIANCE_SIZE, 0.0));
@@ -107,9 +187,9 @@ std::pair<covariance_type, covariance_type> get_covariance(
 	const ros::NodeHandle &node
 ) {
 	auto pose_covariance_vector =
-		get_param_fatal<std::vector<double>>(node, "pose_covariance");
+		get_parameter_fatal<std::vector<double>>(node, "pose_covariance");
 	auto twist_covariance_vector =
-		get_param_fatal<std::vector<double>>(node, "twist_covariance");
+		get_parameter_fatal<std::vector<double>>(node, "twist_covariance");
 
 	if (pose_covariance_vector.size() != COVARIANCE_SIZE) {
 		std::ostringstream oss;
@@ -148,11 +228,12 @@ std::uint32_t get_sequence_id() {
 RobotState calculate_next_state(
 	const ros::NodeHandle &node,
 	phidgets::Encoder &encoder,
-	RobotState &current,
+	const RobotState &current,
 	std::vector<int> &positions
 ) {
-	auto track = get_param_fatal<double>(node, "track");
-	auto meters_per_tick = get_param_fatal<double>(node, "meters_per_tick");
+	auto track = get_parameter_fatal<double>(node, "track");
+	auto meters_per_tick =
+		get_parameter_fatal<double>(node, "meters_per_tick");
 
 	std::vector<int> new_positions(NUM_ENCODERS);
 	for (std::size_t i : util::lang::range(ZERO, NUM_ENCODERS)) {
@@ -165,12 +246,16 @@ RobotState calculate_next_state(
 		new_positions.cend(),
 		positions.cbegin(),
 		delta_position.begin(),
-		[meters_per_tick](int current, int last) {
+		[&](int current, int last) {
 			return (current - last) * meters_per_tick;
 		}
 	);
 
-	double delta = std::accumulate(delta_position.cbegin(), delta_position.cend(), 0.0) / 4.0;
+	double delta = std::accumulate(
+		delta_position.cbegin(),
+		delta_position.cend(),
+		0.0
+	) / 4.0;
 	double omega = (
 		delta_position[3] - delta_position[2] +
 		delta_position[1] - delta_position[0]
@@ -198,15 +283,14 @@ void timer_callback(
 	const ros::Publisher &pub,
 	phidgets::Encoder &encoder,
 	RobotState &state,
-	std::vector<int> &encoder_positions,
-	const ros::TimerEvent&
+	std::vector<int> &encoder_positions
 ) {
 	if (static_cast<std::size_t>(encoder.getEncoderCount()) != NUM_ENCODERS) {
 		ROS_FATAL_STREAM("must have four encoders connected");
 		throw std::runtime_error("must have four encoders connected");
 	}
 
-	auto frame_id = get_param_fatal<std::string>(node, "frame_id");
+	auto frame_id = get_parameter_fatal<std::string>(node, "frame_id");
 
 	auto next_state = calculate_next_state(
 		node,
@@ -265,18 +349,17 @@ int main(int argc, char *argv[]) {
 
 	RobotState state = {0.0, 0.0, 0.0};
 
-	using std::placeholders::_1;
 	auto timer = public_node.createTimer(
 		ros::Duration(polling_period),
-		std::bind(
-			timer_callback,
-			std::cref(private_node),
-			std::cref(pub),
-			std::ref(encoder),
-			std::ref(state),
-			std::ref(encoder_positions),
-			_1
-		)
+		[&](const ros::TimerEvent&) {
+			timer_callback(
+				private_node,
+				pub,
+				encoder,
+				state,
+				encoder_positions
+			);
+		}
 	);
 
 	ros::spin();
