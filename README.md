@@ -8,7 +8,7 @@
 
 ## Motivation
 
-Rust is increasingly attractive and the ability to send info messages from Rust to ROS is a must for further development.
+Our encoders need a little driver sandwich between ROS and the Phidgets drivers.
 
 ## Installation
 
