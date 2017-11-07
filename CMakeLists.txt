@@ -17,20 +17,33 @@ find_package(
 		roscpp
 		phidgets_api
 		nav_msgs
-		tf
+		tf2_ros
 		ros_cpp11_range
+		geometry_msgs
+		tf2_geometry_msgs
 )
 
 catkin_package(DEPENDS Boost)
 
 include_directories(${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
 
-add_library(phidgets_encoder_node src/phidgets_encoder_node.cpp)
+add_executable(phidgets_encoder_node src/phidgets_encoder_node.cpp)
 target_link_libraries(phidgets_encoder_node ${catkin_LIBRARIES})
 add_dependencies(phidgets_encoder_node ${catkin_EXPORTED_TARGETS})
 
+add_executable(encoder_test src/encoder_test.cpp)
+target_link_libraries(encoder_test ${catkin_LIBRARIES})
+add_dependencies(encoder_test ${catkin_EXPORTED_TARGETS})
+
 install(
 	TARGETS phidgets_encoder_node
+	ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+	LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+	RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
+)
+
+install(
+	TARGETS encoder_test
 	ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 	LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 	RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}

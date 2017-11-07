@@ -1,8 +1,10 @@
 #include "ros/ros.h"
 #include "phidgets_api/encoder.h"
 #include "nav_msgs/Odometry.h"
-#include "tf/transform_datatypes.h"
+#include "tf2_ros/transform_broadcaster.h"
 #include "ros_cpp11_range/range.hpp"
+#include "geometry_msgs/TransformStamped.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
 
 #include <boost/array.hpp>
 
@@ -20,9 +22,8 @@
 #include <sstream>
 #include <type_traits>
 
-static const constexpr std::size_t COVARIANCE_SIZE = 36;
-static const constexpr std::size_t ZERO = 0;
-static const constexpr std::size_t NUM_ENCODERS = 4;
+constexpr std::size_t COVARIANCE_SIZE = 36;
+constexpr std::size_t NUM_ENCODERS = 4;
 using covariance_type = boost::array<double, COVARIANCE_SIZE>;
 
 namespace traits {
@@ -98,12 +99,10 @@ std::enable_if_t<traits::is_rosparam_v<T>, T> get_parameter_fatal(
 	T parameter_value;
 
 	if (!node.getParam(parameter, parameter_value)) {
-		std::ostringstream oss;
-		oss << "get_param_fatal: could not retreive parameter "
-			<< node.getNamespace() << parameter;
+		const char *const err = "get_param_fatal: could not retreive parameter ";
 
-		ROS_FATAL_STREAM(oss.str());
-		throw std::runtime_error(oss.str());
+		ROS_FATAL_STREAM(err << node.getNamespace() << "/" << parameter);
+		throw std::runtime_error("get_param_fatal");
 	}
 
 	return parameter_value;
@@ -132,7 +131,11 @@ geometry_msgs::Pose make_pose(const RobotState &state) {
 	pose.position.y = state.y;
 	pose.position.z = 0;
 
-	pose.orientation = tf::createQuaternionMsgFromYaw(state.theta);
+	tf2::Quaternion quat;
+	quat.setEuler(0, 0, state.theta);
+	quat.normalize();
+
+	pose.orientation = tf2::toMsg(quat);
 
 	return pose;
 }
@@ -177,7 +180,7 @@ std::pair<int, double> initialize_parameters(const ros::NodeHandle &node) {
 	}
 
 	if (!node.hasParam("frame_id")) {
-		node.setParam("frame_id", "phidgets_encoder");
+		node.setParam("frame_id", "encoder");
 	}
 
 	return std::make_pair(serial_number, polling_period);
@@ -236,7 +239,7 @@ RobotState calculate_next_state(
 		get_parameter_fatal<double>(node, "meters_per_tick");
 
 	std::vector<int> new_positions(NUM_ENCODERS);
-	for (std::size_t i : util::lang::range(ZERO, NUM_ENCODERS)) {
+	for (std::size_t i : util::lang::range(0ul, NUM_ENCODERS)) {
 		new_positions[i] = encoder.getPosition(i);
 	}
 
@@ -250,6 +253,9 @@ RobotState calculate_next_state(
 			return (current - last) * meters_per_tick;
 		}
 	);
+
+	delta_position[0] = -delta_position[0];
+	delta_position[2] = -delta_position[2];
 
 	double delta = std::accumulate(
 		delta_position.cbegin(),
@@ -290,7 +296,11 @@ void timer_callback(
 		throw std::runtime_error("must have four encoders connected");
 	}
 
+	static tf2_ros::TransformBroadcaster broadcaster;
+
 	auto frame_id = get_parameter_fatal<std::string>(node, "frame_id");
+	auto child_frame_id =
+		get_parameter_fatal<std::string>(node, "child_frame_id");
 
 	auto next_state = calculate_next_state(
 		node,
@@ -305,9 +315,14 @@ void timer_callback(
 
 	nav_msgs::Odometry odom;
 
-	odom.header.seq = get_sequence_id();
-	odom.header.stamp = ros::Time::now();
+	const auto sid = get_sequence_id();
+	const auto now = ros::Time::now();
+
+	odom.header.seq = sid;
+	odom.header.stamp = now;
 	odom.header.frame_id = frame_id;
+
+	odom.child_frame_id = child_frame_id;
 
 	odom.pose.pose = make_pose(next_state);
 	odom.pose.covariance = pose_covariance;
@@ -315,7 +330,24 @@ void timer_callback(
 	odom.twist.twist = make_twist(node, state, next_state);
 	odom.twist.covariance = twist_covariance;
 
+	auto &pos = odom.pose.pose.position;
+	auto &rot = odom.pose.pose.orientation;
+
+	geometry_msgs::TransformStamped transform;
+
+	transform.header.seq = sid;
+	transform.header.stamp = now;
+	transform.header.frame_id = frame_id;
+	transform.child_frame_id = child_frame_id;
+
+	transform.transform.translation.x = pos.x;
+	transform.transform.translation.y = pos.y;
+	transform.transform.translation.z = pos.z;
+
+	transform.transform.rotation = rot;
+
 	pub.publish(odom);
+	broadcaster.sendTransform(transform);
 
 	state = std::move(next_state);
 }
@@ -333,6 +365,7 @@ int main(int argc, char *argv[]) {
 
 	phidgets::Encoder encoder;
 	encoder.open(serial_number);
+	encoder.waitForAttachment(5000);
 
 	if (static_cast<std::size_t>(encoder.getEncoderCount()) != NUM_ENCODERS) {
 		ROS_FATAL_STREAM("must have four encoders connected");
@@ -340,7 +373,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	std::vector<int> encoder_positions(encoder.getEncoderCount());
-	for (std::size_t i : util::lang::range(ZERO, NUM_ENCODERS)) {
+	for (std::size_t i : util::lang::range(0ul, NUM_ENCODERS)) {
 		encoder.setEnabled(i, true);
 		encoder_positions[i] = encoder.getPosition(i);
 	}
