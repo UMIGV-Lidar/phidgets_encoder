@@ -6,7 +6,6 @@
 #include <cstdint> // std::uint32_t
 #include <atomic> // std::atomic
 #include <stdexcept> // std::runtime_error
-#include <utility> // std::move
 
 umigv::PhidgetsWheelsPublisher::PhidgetsWheelsPublisher(
     const int serial_number, ros::Publisher publisher,
@@ -159,4 +158,26 @@ void umigv::PhidgetsWheelsPublisher::positionChangeHandler(
     state.delta_positions.push_back(delta_position);
     state.time += ros::Duration(delta_time * 1.0e-3);
     state.position += delta_position;
+}
+
+umigv::PhidgetsWheelsPublisher::EncoderState::EncoderState(
+    const EncoderState &other
+) {
+    std::lock_guard<std::mutex> guard{ other.mutex };
+
+    delta_positions = other.delta_positions;
+    delta_times = other.delta_times;
+    position = other.position;
+    time = other.time;
+}
+
+umigv::PhidgetsWheelsPublisher::EncoderState::EncoderState(
+    EncoderState &&other
+) noexcept {
+    std::lock_guard<std::mutex> guard{ other.mutex };
+
+    delta_positions = std::move(other.delta_positions);
+    delta_times = std::move(other.delta_times);
+    position = other.position;
+    time = other.time;
 }

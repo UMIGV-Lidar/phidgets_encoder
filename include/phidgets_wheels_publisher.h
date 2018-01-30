@@ -9,6 +9,7 @@
 
 #include <string> // std::string, std::to_string
 #include <mutex> // std::mutex, std::lock_guard
+#include <utility> // std::move
 
 namespace umigv {
 
@@ -49,6 +50,12 @@ private:
                                int delta_position) override;
 
     struct EncoderState {
+        EncoderState() = default;
+
+        EncoderState(const EncoderState &other);
+
+        EncoderState(EncoderState &&other) noexcept;
+
         BufferT delta_positions{ 10 };
         BufferT delta_times{ 10 };
         int position;
