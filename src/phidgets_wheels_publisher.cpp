@@ -91,11 +91,11 @@ void umigv::PhidgetsWheelsPublisher::publish_state(
                                       * static_cast<double>(state.position));
 
         dr = std::accumulate(state.delta_positions.begin(),
-                                        state.delta_positions.end(),
-                                        0.0) * rads_per_tick_;
+                             state.delta_positions.end(),
+                             0.0) * rads_per_tick_;
         dt = std::accumulate(state.delta_times.begin(),
-                                        state.delta_times.end(),
-                                        0.0) * 1e-3;
+                             state.delta_times.end(),
+                             ros::Duration{ 0 }).toSec();;
 
         }
 
@@ -107,27 +107,24 @@ void umigv::PhidgetsWheelsPublisher::publish_state(
     publisher_.publish(to_publish_ptr);
 }
 
-void umigv::PhidgetsWheelsPublisher::poll_encoders(
-    const ros::TimerEvent &event
-) {
+void umigv::PhidgetsWheelsPublisher::poll_encoders(const ros::TimerEvent&) {
     for (auto i = VectorT::size_type{ 0 }; i < states_.size(); ++i) {
         const auto position =
             phidgets::Encoder::getPosition(static_cast<int>(i));
+        const auto now = ros::Time::now();
 
         {
 
         auto &state = states_[i];
         std::lock_guard<std::mutex> guard{ state.mutex };
 
-        const auto dt = event.current_real - state.time;
-        const auto dt_ms = static_cast<int>(std::round(dt.toSec() * 1e3));
-
+        const auto dt = now - state.time;
         const auto dr = position - state.position;
 
         state.delta_positions.push_back(dr);
-        state.delta_times.push_back(dt_ms);
+        state.delta_times.push_back(dt);
         state.position = position;
-        state.time = event.current_real;
+        state.time = now;
 
         }
     }
@@ -149,12 +146,16 @@ void umigv::PhidgetsWheelsPublisher::errorHandler(const int error_code) {
 void umigv::PhidgetsWheelsPublisher::indexHandler(int, int) { }
 
 void umigv::PhidgetsWheelsPublisher::positionChangeHandler(
-    const int index, const int delta_time, const int delta_position
+    const int index, int, const int delta_position
 ) {
+    const auto now = ros::Time::now();
+
     auto &state = states_[index];
     std::lock_guard<std::mutex> guard{ state.mutex };
 
-    state.delta_times.push_back(delta_time);
+    const auto dt = now - state.time;
+
+    state.delta_times.push_back(dt);
     state.delta_positions.push_back(delta_position);
     state.time += ros::Duration(delta_time * 1.0e-3);
     state.position += delta_position;
@@ -163,10 +164,11 @@ void umigv::PhidgetsWheelsPublisher::positionChangeHandler(
 umigv::PhidgetsWheelsPublisher::EncoderState::EncoderState(
     const EncoderState &other
 ) {
-    std::lock_guard<std::mutex> guard{ other.mutex };
+    std::lock_guard<std::mutex> this_guard{ mutex };
+    std::lock_guard<std::mutex> other_guard{ other.mutex };
 
-    delta_positions = other.delta_positions;
     delta_times = other.delta_times;
+    delta_positions = other.delta_positions;
     position = other.position;
     time = other.time;
 }
@@ -174,10 +176,11 @@ umigv::PhidgetsWheelsPublisher::EncoderState::EncoderState(
 umigv::PhidgetsWheelsPublisher::EncoderState::EncoderState(
     EncoderState &&other
 ) noexcept {
-    std::lock_guard<std::mutex> guard{ other.mutex };
+    std::lock_guard<std::mutex> this_guard{ mutex };
+    std::lock_guard<std::mutex> other_guard{ other.mutex };
 
-    delta_positions = std::move(other.delta_positions);
     delta_times = std::move(other.delta_times);
+    delta_positions = std::move(other.delta_positions);
     position = other.position;
     time = other.time;
 }

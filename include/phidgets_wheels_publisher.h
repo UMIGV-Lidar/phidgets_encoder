@@ -35,7 +35,8 @@ public:
 private:
     struct EncoderState;
 
-    using BufferT = boost::circular_buffer<int>;
+    using IntBufferT = boost::circular_buffer<int>;
+    using DurationBufferT = boost::circular_buffer<ros::Duration>;
     using VectorT = boost::container::static_vector<EncoderState, 4>;
 
     void attachHandler() override;
@@ -56,8 +57,8 @@ private:
 
         EncoderState(EncoderState &&other) noexcept;
 
-        BufferT delta_positions{ 10 };
-        BufferT delta_times{ 10 };
+        DurationBufferT delta_times{ 10 };
+        IntBufferT delta_positions{ 10 };
         int position;
         ros::Time time;
         mutable std::mutex mutex;
