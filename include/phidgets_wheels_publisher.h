@@ -7,8 +7,11 @@
 #include <boost/circular_buffer.hpp> // boost::circular_buffer
 #include <boost/container/static_vector.hpp> // boost::container::static_vector
 
-#include <string> // std::string, std::to_string
+#include <atomic> // std::atomic
+#include <queue> // std::queue
+#include <future> // std::future, std::async
 #include <mutex> // std::mutex, std::lock_guard
+#include <string> // std::string, std::to_string
 #include <utility> // std::move
 
 namespace umigv {
@@ -49,6 +52,10 @@ private:
     void positionChangeHandler(int index, int delta_time,
                                int delta_position) override;
 
+    void position_changed_impl(int index, ros::Time time, int delta_position);
+
+    void process_queue();
+
     struct EncoderState {
         EncoderState() = default;
 
@@ -58,15 +65,20 @@ private:
 
         BufferT delta_positions{ 10 };
         BufferT delta_times{ 10 };
-        int position;
-        ros::Time time;
         mutable std::mutex mutex;
+        ros::Time time;
+        int position;
+        bool updated = false;
     };
 
     VectorT states_;
     ros::Publisher publisher_;
     const std::string frame_id_;
     const double rads_per_tick_;
+    std::thread work_thread_;
+    std::queue<std::future<void>> work_queue_;
+    std::mutex queue_mutex_;
+    std::atomic<bool> destructing_{ false };
 };
 
 } // namespace umigv

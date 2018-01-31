@@ -4,7 +4,6 @@
 
 #include <cmath> // std::round
 #include <cstdint> // std::uint32_t
-#include <atomic> // std::atomic
 #include <stdexcept> // std::runtime_error
 
 umigv::PhidgetsWheelsPublisher::PhidgetsWheelsPublisher(
@@ -55,10 +54,15 @@ umigv::PhidgetsWheelsPublisher::PhidgetsWheelsPublisher(
         std::lock_guard<std::mutex> guard{ state.mutex };
         state.position = phidgets::Encoder::getPosition(i);
     }
+
+    work_thread_ = std::thread([this] { process_queue(); });
 }
 
 umigv::PhidgetsWheelsPublisher::~PhidgetsWheelsPublisher() {
     phidgets::Phidget::close();
+
+    destructing_ = true;
+    work_thread_.join();
 }
 
 void umigv::PhidgetsWheelsPublisher::publish_state(
@@ -91,11 +95,11 @@ void umigv::PhidgetsWheelsPublisher::publish_state(
                                       * static_cast<double>(state.position));
 
         dr = std::accumulate(state.delta_positions.begin(),
-                                        state.delta_positions.end(),
-                                        0.0) * rads_per_tick_;
+                             state.delta_positions.end(),
+                             0.0) * rads_per_tick_;
         dt = std::accumulate(state.delta_times.begin(),
-                                        state.delta_times.end(),
-                                        0.0) * 1e-3;
+                             state.delta_times.end(),
+                             0.0) * 1e-3;
 
         }
 
@@ -107,28 +111,16 @@ void umigv::PhidgetsWheelsPublisher::publish_state(
     publisher_.publish(to_publish_ptr);
 }
 
-void umigv::PhidgetsWheelsPublisher::poll_encoders(
-    const ros::TimerEvent &event
-) {
+void umigv::PhidgetsWheelsPublisher::poll_encoders(const ros::TimerEvent&) {
     for (auto i = VectorT::size_type{ 0 }; i < states_.size(); ++i) {
-        const auto position =
-            phidgets::Encoder::getPosition(static_cast<int>(i));
-
-        {
-
         auto &state = states_[i];
         std::lock_guard<std::mutex> guard{ state.mutex };
 
-        const auto dt = event.current_real - state.time;
-        const auto dt_ms = static_cast<int>(std::round(dt.toSec() * 1e3));
-
-        const auto dr = position - state.position;
-
-        state.delta_positions.push_back(dr);
-        state.delta_times.push_back(dt_ms);
-        state.position = position;
-        state.time = event.current_real;
-
+        if (state.updated) {
+            state.updated = false;
+        } else {
+            state.delta_positions.clear();
+            state.delta_times.clear();
         }
     }
 }
@@ -149,15 +141,48 @@ void umigv::PhidgetsWheelsPublisher::errorHandler(const int error_code) {
 void umigv::PhidgetsWheelsPublisher::indexHandler(int, int) { }
 
 void umigv::PhidgetsWheelsPublisher::positionChangeHandler(
-    const int index, const int delta_time, const int delta_position
+    const int index, int, const int delta_position
+) {
+    const auto now = ros::Time::now();
+
+    std::lock_guard<std::mutex> guard{ queue_mutex_ };
+    work_queue_.emplace(std::async(
+        &PhidgetsWheelsPublisher::position_changed_impl, this,
+        index, now, delta_position
+    ));
+}
+
+void umigv::PhidgetsWheelsPublisher::position_changed_impl(
+    const int index, const ros::Time now,
+    const int delta_position
 ) {
     auto &state = states_[index];
     std::lock_guard<std::mutex> guard{ state.mutex };
 
-    state.delta_times.push_back(delta_time);
+    const auto dt = now - state.time;
+    const auto dt_ms = static_cast<int>(std::round(dt.toSec() * 1.0e3));
+
     state.delta_positions.push_back(delta_position);
-    state.time += ros::Duration(delta_time * 1.0e-3);
+    state.delta_times.push_back(dt_ms);
+    state.time = now;
     state.position += delta_position;
+    state.updated = true;
+}
+
+void umigv::PhidgetsWheelsPublisher::process_queue() {
+    while (not destructing_) {
+        // redo this with condvars?
+        std::lock_guard<std::mutex> guard{ queue_mutex_ };
+
+        if (destructing_) {
+            return;
+        }
+
+        if (not work_queue_.empty()) {
+            work_queue_.front().get();
+            work_queue_.pop();
+        }
+    }
 }
 
 umigv::PhidgetsWheelsPublisher::EncoderState::EncoderState(
@@ -167,8 +192,9 @@ umigv::PhidgetsWheelsPublisher::EncoderState::EncoderState(
 
     delta_positions = other.delta_positions;
     delta_times = other.delta_times;
-    position = other.position;
     time = other.time;
+    position = other.position;
+    updated = other.updated;
 }
 
 umigv::PhidgetsWheelsPublisher::EncoderState::EncoderState(
@@ -178,6 +204,7 @@ umigv::PhidgetsWheelsPublisher::EncoderState::EncoderState(
 
     delta_positions = std::move(other.delta_positions);
     delta_times = std::move(other.delta_times);
-    position = other.position;
     time = other.time;
+    position = other.position;
+    updated = other.updated;
 }

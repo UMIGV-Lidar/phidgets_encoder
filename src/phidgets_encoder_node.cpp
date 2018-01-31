@@ -19,7 +19,7 @@ int main(int argc, char *argv[]) {
 	const auto publish_rate =
 		umigv::get_parameter_default(private_handle, "publish_rate", 60.0);
 	const auto polling_rate =
-		umigv::get_parameter_default(private_handle, "polling_rate", 60.0);
+		umigv::get_parameter_default(private_handle, "polling_rate", 10.0);
 	auto frame_id =
 		umigv::get_parameter_default(private_handle, "frame_id", "encoders"s);
 
@@ -39,11 +39,10 @@ int main(int argc, char *argv[]) {
 	auto state_publisher =
 		handle.advertise<sensor_msgs::JointState>("wheel_state", 10);
 
-	auto encoder_publisher =
-		umigv::PhidgetsWheelsPublisher{ serial_number,
-										std::move(state_publisher),
-										std::move(frame_id), wheel_count_enum,
-										rads_per_tick };
+	umigv::PhidgetsWheelsPublisher encoder_publisher{
+		serial_number, std::move(state_publisher), std::move(frame_id),
+		wheel_count_enum, rads_per_tick
+	};
 
 	auto publish_timer =
 		handle.createTimer(ros::Rate(publish_rate),
