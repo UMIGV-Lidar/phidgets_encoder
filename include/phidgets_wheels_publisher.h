@@ -1,6 +1,9 @@
 #ifndef UMIGV_PHIDGETS_WHEELS_PUBLISHER_H
 #define UMIGV_PHIDGETS_WHEELS_PUBLISHER_H
 
+#include "exceptions.h" // umigv::UnableToConnectException,
+                        // umigv::DeviceDetachedException
+
 #include <phidgets_api/encoder.h> // phidgets::Encoder
 #include <ros/ros.h> // ros::Publisher, ros::TimerEvent
 
@@ -24,7 +27,7 @@ class PhidgetsWheelsPublisher final : private phidgets::Encoder {
 public:
     PhidgetsWheelsPublisher(int serial_number, ros::Publisher publisher,
                             std::string frame_id, WheelCount count,
-                            double rads_per_tick);
+                            double rads_per_tick, std::size_t buffer_length);
 
     ~PhidgetsWheelsPublisher();
 
@@ -47,11 +50,12 @@ private:
 
     void indexHandler(int, int) override;
 
-    void positionChangeHandler(int index, int delta_time,
-                               int delta_position) override;
+    void positionChangeHandler(int index, int, int delta_position) override;
 
     struct EncoderState {
         EncoderState() = default;
+
+        EncoderState(std::size_t buffer_length);
 
         EncoderState(const EncoderState &other);
 
@@ -59,9 +63,10 @@ private:
 
         DurationBufferT delta_times{ 10 };
         IntBufferT delta_positions{ 10 };
-        int position;
-        ros::Time time;
         mutable std::mutex mutex;
+        ros::Time time;
+        int position;
+        bool updated = false;
     };
 
     VectorT states_;

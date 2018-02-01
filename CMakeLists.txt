@@ -21,7 +21,7 @@ catkin_package(DEPENDS Boost)
 include_directories(include/ ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
 
 add_executable(phidgets_encoder_node src/phidgets_encoder_node.cpp
-               src/phidgets_wheels_publisher.cpp)
+               src/phidgets_wheels_publisher.cpp src/exceptions.cpp)
 target_link_libraries(phidgets_encoder_node ${catkin_LIBRARIES})
 add_dependencies(phidgets_encoder_node ${catkin_EXPORTED_TARGETS})
 

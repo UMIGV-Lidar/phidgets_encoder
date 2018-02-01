@@ -6,14 +6,20 @@
 #include <cstdint> // std::uint32_t
 #include <atomic> // std::atomic
 #include <stdexcept> // std::runtime_error
+#include <string> // operator ""s
 
 umigv::PhidgetsWheelsPublisher::PhidgetsWheelsPublisher(
     const int serial_number, ros::Publisher publisher,
-    std::string frame_id, const WheelCount count, const double rads_per_tick
-) : phidgets::Encoder{ }, states_{ static_cast<VectorT::size_type>(count) + 1 },
+    std::string frame_id, const WheelCount count, const double rads_per_tick,
+    const std::size_t buffer_length
+) : phidgets::Encoder{ },
+    states_(static_cast<VectorT::size_type>(count) + 1,
+            EncoderState{ buffer_length } ),
     publisher_{ std::move(publisher) }, frame_id_{ std::move(frame_id) },
     rads_per_tick_{ rads_per_tick }
 {
+    using namespace std::literals;
+
     phidgets::Encoder::open(serial_number);
 
     if (serial_number == -1) {
@@ -25,19 +31,22 @@ umigv::PhidgetsWheelsPublisher::PhidgetsWheelsPublisher(
         );
     }
 
-    for (auto i = 0; i < 10; ++i) {
-        const auto result = phidgets::Phidget::waitForAttachment(1000);
+    constexpr auto TRIES = 3;
+    for (auto i = 0; i < TRIES; ++i) {
+        const auto result = phidgets::Phidget::waitForAttachment(2000);
 
         if (result == 0) {
             break;
         }
 
-        if (i < 9) {
+        if (i < TRIES - 1) {
             ROS_WARN_STREAM("unable to connect, retrying...");
         } else {
-            throw std::runtime_error{
-                "PhidgetsWheelsPublisher::PhidgetsWheelsPublisher"
-            };
+            const auto description =
+                "PhidgetsWheelsPublisher::PhidgetsWheelsPublisher: "s
+                + phidgets::Phidget::getErrorDescription(result);
+
+            throw UnableToConnectException{ result, description };
         }
     }
 
@@ -80,7 +89,7 @@ void umigv::PhidgetsWheelsPublisher::publish_state(
         to_publish.name.push_back("wheel"s + std::to_string(i));
 
         auto dr = 0.0;
-        auto dt = 0.0;
+        auto dt = 1.0;
 
         {
 
@@ -90,12 +99,15 @@ void umigv::PhidgetsWheelsPublisher::publish_state(
         to_publish.position.push_back(rads_per_tick_
                                       * static_cast<double>(state.position));
 
-        dr = std::accumulate(state.delta_positions.begin(),
-                             state.delta_positions.end(),
-                             0.0) * rads_per_tick_;
-        dt = std::accumulate(state.delta_times.begin(),
-                             state.delta_times.end(),
-                             ros::Duration{ 0 }).toSec();;
+        if (not state.delta_positions.empty()
+            and not state.delta_times.empty()) {
+            dr = std::accumulate(state.delta_positions.begin(),
+                                 state.delta_positions.end(),
+                                 0.0) * rads_per_tick_;
+            dt = std::accumulate(state.delta_times.begin(),
+                                 state.delta_times.end(),
+                                 ros::Duration{ 0 }).toSec();;
+        }
 
         }
 
@@ -109,23 +121,14 @@ void umigv::PhidgetsWheelsPublisher::publish_state(
 
 void umigv::PhidgetsWheelsPublisher::poll_encoders(const ros::TimerEvent&) {
     for (auto i = VectorT::size_type{ 0 }; i < states_.size(); ++i) {
-        const auto position =
-            phidgets::Encoder::getPosition(static_cast<int>(i));
-        const auto now = ros::Time::now();
-
-        {
-
         auto &state = states_[i];
         std::lock_guard<std::mutex> guard{ state.mutex };
 
-        const auto dt = now - state.time;
-        const auto dr = position - state.position;
-
-        state.delta_positions.push_back(dr);
-        state.delta_times.push_back(dt);
-        state.position = position;
-        state.time = now;
-
+        if (state.updated) {
+            state.updated = false;
+        } else {
+            state.delta_positions.clear();
+            state.delta_times.clear();
         }
     }
 }
@@ -133,8 +136,7 @@ void umigv::PhidgetsWheelsPublisher::poll_encoders(const ros::TimerEvent&) {
 void umigv::PhidgetsWheelsPublisher::attachHandler() { }
 
 void umigv::PhidgetsWheelsPublisher::detachHandler() {
-    ROS_FATAL_STREAM("encoder board detached, shutting down...");
-    throw std::runtime_error{ "PhidgetsWheelsPublisher::detachHandler" };
+    throw DeviceDetachedException{ "PhidgetsWheelsPublisher::detachHandler" };
 }
 
 void umigv::PhidgetsWheelsPublisher::errorHandler(const int error_code) {
@@ -157,9 +159,16 @@ void umigv::PhidgetsWheelsPublisher::positionChangeHandler(
 
     state.delta_times.push_back(dt);
     state.delta_positions.push_back(delta_position);
-    state.time += ros::Duration(delta_time * 1.0e-3);
+    state.time = now;
     state.position += delta_position;
+    state.updated = true;
 }
+
+umigv::PhidgetsWheelsPublisher::EncoderState::EncoderState(
+    const std::size_t buffer_length
+) : delta_times{ buffer_length }, delta_positions{ buffer_length }, mutex{ },
+    time{ }, position{ }, updated{ false }
+{ }
 
 umigv::PhidgetsWheelsPublisher::EncoderState::EncoderState(
     const EncoderState &other

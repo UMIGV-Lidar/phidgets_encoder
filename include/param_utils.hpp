@@ -1,4 +1,5 @@
 #include "ros_traits.hpp" // umigv::IsParameterV
+#include "exceptions.h" // umigv::ParameterNotFoundException
 
 #include <ros/ros.h> // ros::NodeHandle, ros::shutdown, ROS_FATAL_STREAM
 
@@ -9,19 +10,18 @@ namespace umigv {
 
 template <typename T>
 std::enable_if_t<IsParameterV<T>, T> get_parameter_fatal(
-    const ros::NodeHandle &node,
+    const ros::NodeHandle &handle,
     const std::string &parameter
 ) {
-    T parameter_value;
+    auto fetched = T{ };
 
-    if (not node.getParam(parameter, parameter_value)) {
-        const char *const err = "get_param_fatal: could not retreive parameter ";
-
-        ROS_FATAL_STREAM(err << node.getNamespace() << "/" << parameter);
-        ros::shutdown();
+    if (not handle.getParam(parameter, fetched)) {
+        auto parameter_namespaced = handle.getNamespace() + "/" + parameter;
+        throw ParameterNotFoundException{ "get_parameter_fatal",
+                                          std::move(parameter_namespaced) };
     }
 
-    return parameter_value;
+    return fetched;
 }
 
 template <typename T>
