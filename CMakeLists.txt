@@ -25,9 +25,7 @@ add_executable(phidgets_encoder_node src/phidgets_encoder_node.cpp
 target_link_libraries(phidgets_encoder_node ${catkin_LIBRARIES})
 add_dependencies(phidgets_encoder_node ${catkin_EXPORTED_TARGETS})
 
-install(
-	TARGETS phidgets_encoder_node
-	ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-	LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-	RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
-)
+install(TARGETS phidgets_encoder_node
+		ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+		LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+		RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION})
