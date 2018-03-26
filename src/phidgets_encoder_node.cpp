@@ -1,97 +1,71 @@
-#include "exceptions.h"
-#include "param_utils.hpp"
-#include "phidgets_wheels_publisher.h"
+#include "encoder_state_publisher.h" // umigv::EncoderStatePublisher
 
 #include <ros/ros.h>
 #include <sensor_msgs/JointState.h>
+#include <umigv_utilities/types.hpp>
+#include <umigv_utilities/utility.hpp> // umigv::blocking_shutdown
+#include <umigv_utilities/exceptions.hpp> // umigv::ParameterNotFoundException,
+										  // umigv::PhidgetException
+#include <umigv_utilities/rosparam.hpp> // umigv:get_parameter_or,
+										// umigv::get_parameter_fatal
 
-#include <cstdlib> // std::exit, EXIT_FAILURE
 #include <string> // operator""s
-#include <thread> // std::thread::hardware_concurrency
+#include <tuple> // std::tuple
 
-int main(int argc, char *argv[]) {
+using namespace umigv::types;
+
+std::tuple<int, f64, std::string>
+get_defaultable_parameters(ros::NodeHandle &handle) {
 	using namespace std::literals;
 
+	return std::tuple<int, f64, std::string>{
+		umigv::get_parameter_or(handle, "serial_number", -1),
+		umigv::get_parameter_or(handle, "frequency", 100.0),
+		umigv::get_parameter_or(handle, "frame_id", "encoders"s)
+	};
+}
+
+int main(int argc, char *argv[]) {
 	ros::init(argc, argv, "phidgets_encoder_node");
-	auto handle = ros::NodeHandle{ };
-	auto private_handle = ros::NodeHandle{ "~" };
+	ros::NodeHandle handle;
+	ros::NodeHandle private_handle{ "~" };
 
-	const auto serial_number =
-		umigv::get_parameter_default(private_handle, "serial_number", -1);
-	const auto publish_rate =
-		umigv::get_parameter_default(private_handle, "publish_rate", 60.0);
-	const auto polling_rate =
-		umigv::get_parameter_default(private_handle, "polling_rate", 60.0);
-	auto frame_id =
-		umigv::get_parameter_default(private_handle, "frame_id", "encoders"s);
-	auto buffer_length_param =
-		umigv::get_parameter_default(private_handle, "buffer_length", 10);
+	int serial_number;
+	f64 frequency;
+	std::string frame_id;
 
-	if (buffer_length_param <= 0) {
-		ROS_WARN_STREAM("invalid ~buffer_length: " << buffer_length_param
-		                << ", using default value of 10...");
-		buffer_length_param = 10;
-	}
+	std::tie(serial_number, frequency, frame_id) =
+		get_defaultable_parameters(private_handle);
 
-	const auto buffer_length = static_cast<std::size_t>(buffer_length_param);
-
-	auto wheel_count = int{ };
-	double rads_per_tick = double{ };
+	f64 rads_per_tick;
 
 	try {
-		wheel_count = umigv::get_parameter_fatal<int>(private_handle,
-		                                              "wheel_count");
-		rads_per_tick = umigv::get_parameter_fatal<double>(private_handle,
-		                                                   "rads_per_tick");
+		rads_per_tick = umigv::get_parameter_fatal<f64>(private_handle,
+														"rads_per_tick");
 	} catch (const umigv::ParameterNotFoundException &e) {
-		ROS_FATAL_STREAM("unable to find parameter " << e.parameter());
-		ros::shutdown();
-		ros::waitForShutdown();
-		std::exit(EXIT_FAILURE);
-	} 
+		ROS_FATAL_STREAM("parameter '" << e.parameter() << "' not found");
 
-	if (wheel_count < 1 or wheel_count > 4) {
-		ROS_FATAL_STREAM("invalid ~wheel_count: " << wheel_count);
-		ros::shutdown();
-		ros::waitForShutdown();
-		std::exit(EXIT_FAILURE);
+		umigv::blocking_shutdown();
 	}
 
-	const auto wheel_count_enum =
-		static_cast<umigv::WheelCount>(wheel_count - 1);
-
-	auto state_publisher =
-		handle.advertise<sensor_msgs::JointState>("wheel_state", 10);
-
 	try {
-		auto encoder_publisher =
-			umigv::PhidgetsWheelsPublisher{ serial_number,
-											std::move(state_publisher),
-											std::move(frame_id),
-											wheel_count_enum,
-											rads_per_tick, buffer_length };
+		umigv::EncoderStatePublisher state_publisher{
+			handle.advertise<sensor_msgs::JointState>("wheel_state", 10),
+			umigv::RobotCharacteristics().with_frame(std::move(frame_id))
+										 .with_rads_per_tick(rads_per_tick)
+										 .with_serial_number(serial_number)
+		};
 
 		auto publish_timer =
-			handle.createTimer(ros::Rate(publish_rate),
-			                   &umigv::PhidgetsWheelsPublisher::publish_state,
-			                   &encoder_publisher);
-		auto poll_timer =
-			handle.createTimer(ros::Rate(polling_rate),
-			                   &umigv::PhidgetsWheelsPublisher::poll_encoders,
-			                   &encoder_publisher);
+			handle.createTimer(ros::Rate(frequency),
+			                   &umigv::EncoderStatePublisher::publish_state,
+			                   &state_publisher);
 
-		auto spinner = ros::AsyncSpinner{ std::thread::hardware_concurrency() };
-		spinner.start();
-		ros::waitForShutdown();
-	} catch (const umigv::UnableToConnectException &e) {
-		ROS_FATAL_STREAM("unable to connect: " << e.code() << ": " << e.what());
-		ros::shutdown();
-		ros::waitForShutdown();
-		std::exit(EXIT_FAILURE);
-	} catch (const umigv::DeviceDetachedException &e) {
-		ROS_FATAL_STREAM("device detached");
-		ros::shutdown();
-		ros::waitForShutdown();
-		std::exit(EXIT_FAILURE);
+		ros::spin();
+	} catch (const umigv::PhidgetsException &e) {
+		ROS_FATAL_STREAM(e.what() << ": " << e.error_description() << " ("
+						 << e.error_code() << ")");
+
+		umigv::blocking_shutdown();
 	}
 }

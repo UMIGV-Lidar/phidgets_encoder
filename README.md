@@ -1,10 +1,10 @@
 ## Synopsis
 
-`phidgets_encoder` interfaces with a Phidgets 1047 High Speed Encoder board and outputs a JointState for as many wheels as specified, including average rotational velocity averaged over the last few position change events.
+`phidgets_encoder` interfaces with a Phidgets 1047 High Speed Encoder board and outputs a JointState for two wheels, including instantaneous rotational velocity.
 
 ## Code Example
 
-	rosrun phidgets_encoder phidgets_encoder_node _wheel_count:=2 _rads_per_tick:=0.00436332313 _serial_number:=-1 _publish_rate:=60.0 _polling_rate:=60.0 _frame_id:=encoders _buffer_length:=10
+	rosrun phidgets_encoder phidgets_encoder_node _rads_per_tick:=0.00436332313 _serial_number:=-1 _frequency:=60.0 _frame_id:=encoders
 
 ## Motivation
 
@@ -12,7 +12,7 @@ Getting a JointState for each encoder-bound wheel is the first step to generatin
 
 ## Installation
 
-Clone this repository into your `catkin` workspace, then run `catkin_make`. Optionally, run `catkin_make install` to install the package to your `catkin` workspace.
+Clone this repository into your `catkin` workspace, then run `catkin_make_isolated --install`.
 
 ## Contributors
 

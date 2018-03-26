@@ -6,22 +6,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 project(phidgets_encoder)
 
-find_package(Boost REQUIRED)
+find_package(catkin REQUIRED COMPONENTS phidgets_api roscpp sensor_msgs
+										umigv_utilities)
 
-find_package(
-	catkin REQUIRED
-	COMPONENTS
-		phidgets_api
-		roscpp
-		sensor_msgs
-)
-
-catkin_package(DEPENDS Boost)
-
-include_directories(include/ ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
+include_directories(${catkin_INCLUDE_DIRS})
 
 add_executable(phidgets_encoder_node src/phidgets_encoder_node.cpp
-               src/phidgets_wheels_publisher.cpp src/exceptions.cpp)
+               src/encoder_state_publisher.cpp)
 target_link_libraries(phidgets_encoder_node ${catkin_LIBRARIES})
 add_dependencies(phidgets_encoder_node ${catkin_EXPORTED_TARGETS})
 
