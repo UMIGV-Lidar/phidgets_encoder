@@ -8,6 +8,8 @@ project(phidgets_encoder)
 
 find_package(catkin REQUIRED COMPONENTS phidgets_api roscpp sensor_msgs
 										umigv_utilities)
+										
+catkin_package(CATKIN_DEPENDS phidgets_api roscpp sensor_msgs umigv_utilities)
 
 include_directories(${catkin_INCLUDE_DIRS})
 
@@ -18,5 +20,5 @@ add_dependencies(phidgets_encoder_node ${catkin_EXPORTED_TARGETS})
 
 install(TARGETS phidgets_encoder_node
         ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-	LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-	RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
+	    LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+	    RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
