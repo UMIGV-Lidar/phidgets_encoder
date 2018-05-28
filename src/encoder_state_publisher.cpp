@@ -7,14 +7,7 @@
 namespace umigv {
 
 RobotCharacteristics&
-RobotCharacteristics::with_frame(const std::string &frame) {
-    frame_id = frame;
-
-    return *this;
-}
-
-RobotCharacteristics&
-RobotCharacteristics::with_frame(std::string &&frame) noexcept {
+RobotCharacteristics::with_frame(std::string frame) noexcept {
     frame_id = std::move(frame);
 
     return *this;
@@ -28,8 +21,10 @@ RobotCharacteristics::with_serial_number(const int serial) noexcept {
 }
 
 RobotCharacteristics&
-RobotCharacteristics::with_rads_per_tick(const f64 radians) noexcept {
-    rads_per_tick = radians;
+RobotCharacteristics::with_rads_per_tick(const f64 left_rads,
+                                         const f64 right_rads) noexcept {
+    rads_per_tick.first = left_rads;
+    rads_per_tick.second = right_rads;
 
     return *this;
 }
@@ -92,9 +87,9 @@ EncoderStatePublisher::make_message(const EncoderState next_state) const {
     message.name = { "wheel0", "wheel1" };
 
     const f64 left_position = static_cast<f64>(next_state.left_ticks)
-                              * rads_per_tick_;
+                              * rads_per_tick_.first;
     const f64 right_position = static_cast<f64>(next_state.right_ticks)
-                            * rads_per_tick_;
+                            * rads_per_tick_.second;
 
     message.position = { left_position, right_position };
 

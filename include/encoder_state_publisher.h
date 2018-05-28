@@ -8,23 +8,23 @@
 #include <umigv_utilities/types.hpp>
 
 #include <string> // std::string, std::to_string
+#include <utility>
 
 namespace umigv {
 
 struct RobotCharacteristics {
     RobotCharacteristics() = default;
 
-    RobotCharacteristics& with_frame(const std::string &frame);
+    RobotCharacteristics& with_frame(std::string frame) noexcept;
 
-    RobotCharacteristics& with_frame(std::string &&frame) noexcept;
-
-    RobotCharacteristics& with_rads_per_tick(f64 radians) noexcept;
+    RobotCharacteristics& with_rads_per_tick(f64 left_rads,
+                                             f64 right_rads) noexcept;
 
     RobotCharacteristics& with_serial_number(int serial) noexcept;
 
-    std::string frame_id;
-    f64 rads_per_tick;
-    int serial_number;
+    std::string frame_id = "encoders";
+    std::pair<f64, f64> rads_per_tick;
+    int serial_number = -1;
 };
 
 class EncoderStatePublisher final : private phidgets::Encoder {
@@ -62,7 +62,7 @@ private:
     std::string frame_id_;
     EncoderState state_;
     ros::Publisher publisher_;
-    f64 rads_per_tick_;
+    std::pair<f64, f64> rads_per_tick_;
 };
 
 } // namespace umigv
