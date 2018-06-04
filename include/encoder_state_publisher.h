@@ -63,6 +63,7 @@ private:
     EncoderState state_;
     ros::Publisher publisher_;
     f64 rads_per_tick_;
+    int serial_number_ = -1;
 };
 
 } // namespace umigv

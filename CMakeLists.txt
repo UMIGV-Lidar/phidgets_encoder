@@ -11,7 +11,7 @@ find_package(catkin REQUIRED COMPONENTS phidgets_api roscpp sensor_msgs
 										
 catkin_package(CATKIN_DEPENDS phidgets_api roscpp sensor_msgs umigv_utilities)
 
-include_directories(${catkin_INCLUDE_DIRS})
+include_directories(include/ ${catkin_INCLUDE_DIRS})
 
 add_executable(phidgets_encoder_node src/phidgets_encoder_node.cpp
                src/encoder_state_publisher.cpp)

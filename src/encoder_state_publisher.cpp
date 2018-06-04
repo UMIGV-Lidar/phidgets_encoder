@@ -66,9 +66,11 @@ void EncoderStatePublisher::try_attach(const int serial_number) {
         throw PhidgetsException{ "EncoderStatePublisher::try_attach", result };
     }
 
-    ROS_INFO_STREAM("connected to '" << phidgets::Phidget::getDeviceName()
-                    << "' with serial number "
-                    << phidgets::Phidget::getDeviceSerialNumber());
+
+    const auto name = phidgets::Phidget::getDeviceName();
+    serial_number_ = phidgets::Phidget::getDeviceSerialNumber();
+
+    ROS_INFO_STREAM("connected to '" << name << "' #" << serial_number_);
 
     phidgets::Encoder::setEnabled(0, true);
     phidgets::Encoder::setEnabled(1, true);
@@ -114,8 +116,15 @@ EncoderStatePublisher::make_message(const EncoderState next_state) const {
 void EncoderStatePublisher::attachHandler() { }
 
 void EncoderStatePublisher::detachHandler() {
-    throw PhidgetsException{ "PhidgetsWheelsPublisher::detachHandler",
-                             EPHIDGET_NOTATTACHED };
+    ROS_ERROR_STREAM("device detached, attempting to reattach...");
+
+    try {
+        try_attach(serial_number_);
+    } catch (const PhidgetsException &e) {
+        ROS_FATAL_STREAM("unable to reattach in given timeout");
+        throw PhidgetsException{ "EncoderStatePublisher::detachHandler",
+                                  e.error_code() };
+    }
 }
 
 void EncoderStatePublisher::errorHandler(const int error_code) {
