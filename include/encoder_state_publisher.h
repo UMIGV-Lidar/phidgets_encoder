@@ -64,6 +64,8 @@ private:
     ros::Publisher publisher_;
     f64 rads_per_tick_;
     int serial_number_ = -1;
+    std::string name_;
+    bool is_connected_ = false;
 };
 
 } // namespace umigv

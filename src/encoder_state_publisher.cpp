@@ -44,10 +44,12 @@ EncoderStatePublisher::EncoderStatePublisher(
 }
 
 EncoderStatePublisher::~EncoderStatePublisher() {
-    phidgets::Phidget::close();
+    if (is_connected_) {
+        phidgets::Phidget::close();
+    }
 }
 
-void EncoderStatePublisher::publish_state(const ros::TimerEvent &event) {
+void EncoderStatePublisher::publish_state(const ros::TimerEvent&) {
     EncoderState next_state = poll_encoders();
 
     const sensor_msgs::JointState message = make_message(next_state);
@@ -65,15 +67,6 @@ void EncoderStatePublisher::try_attach(const int serial_number) {
     if (result != EPHIDGET_OK) {
         throw PhidgetsException{ "EncoderStatePublisher::try_attach", result };
     }
-
-
-    const auto name = phidgets::Phidget::getDeviceName();
-    serial_number_ = phidgets::Phidget::getDeviceSerialNumber();
-
-    ROS_INFO_STREAM("connected to '" << name << "' #" << serial_number_);
-
-    phidgets::Encoder::setEnabled(0, true);
-    phidgets::Encoder::setEnabled(1, true);
 }
 
 EncoderStatePublisher::EncoderState EncoderStatePublisher::poll_encoders() {
@@ -113,18 +106,22 @@ EncoderStatePublisher::make_message(const EncoderState next_state) const {
     return message;
 }
 
-void EncoderStatePublisher::attachHandler() { }
+void EncoderStatePublisher::attachHandler() {
+    phidgets::Encoder::attachHandler();
+
+    is_connected_ = true;
+    serial_number_ = phidgets::Phidget::getDeviceSerialNumber();
+    name_ = phidgets::Phidget::getDeviceName();
+
+    phidgets::Encoder::setEnabled(0, true);
+    phidgets::Encoder::setEnabled(1, true);
+}
 
 void EncoderStatePublisher::detachHandler() {
-    ROS_ERROR_STREAM("device detached, attempting to reattach...");
-
-    try {
-        try_attach(serial_number_);
-    } catch (const PhidgetsException &e) {
-        ROS_FATAL_STREAM("unable to reattach in given timeout");
-        throw PhidgetsException{ "EncoderStatePublisher::detachHandler",
-                                  e.error_code() };
-    }
+    phidgets::Encoder::detachHandler();
+    is_connected_ = false;
+    serial_number_ = -1;
+    name_.clear();
 }
 
 void EncoderStatePublisher::errorHandler(const int error_code) {
